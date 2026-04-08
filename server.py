@@ -293,6 +293,7 @@ def create_app(config: dict = None) -> Flask:
 # Entry point
 # ---------------------------------------------------------------------------
 
+# Create the app at module level so gunicorn can find it
 app = create_app()
 
 if __name__ == "__main__":
