@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<!--
+  mobile_app.html
+  ---------------
+  Progressive Web App (PWA) front-end for the Multi-Cloud Platform.
+  Designed specifically for mobile screen sizes (≤ 480 px).
+  Communicates with the Flask server (server.py) over a local network.
+
+  To use on a real mobile device:
+    1. Start server.py on your PC
+    2. Find your PC's local IP (e.g. 192.168.1.10)
+    3. Update SERVER_URL below to http://192.168.1.10:5000
+    4. Open this file on your phone's browser
+
+  Course concepts used: Web Interface (mobile-optimised PWA)
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="theme-color" content="#2563eb"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>MultiCloud Mobile</title>
+  <style>
+    /* -------------------------------------------------------
+       Base
+    ------------------------------------------------------- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue:    #2563eb;
+      --green:   #16a34a;
+      --red:     #dc2626;
+      --gray-1:  #f1f5f9;
+      --gray-2:  #e2e8f0;
+      --gray-5:  #64748b;
+      --gray-9:  #0f172a;
+      --radius:  12px;
+    }
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--gray-1);
+      color: var(--gray-9);
+      font-size: 16px;
+    }
+    /* Prevent text zoom on iOS on input focus */
+    input, select { font-size: 16px !important; }
+
+    /* -------------------------------------------------------
+       App shell: fixed header + scrollable content + bottom nav
+    ------------------------------------------------------- */
+    #app-header {
+      position: fixed; top: 0; left: 0; right: 0; height: 56px;
+      background: var(--blue); color: #fff;
+      display: flex; align-items: center; padding: 0 1rem;
+      font-weight: 700; font-size: 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2); z-index: 100;
+    }
+    #app-content {
+      margin-top: 56px;
+      margin-bottom: 64px;
+      padding: 1rem;
+      overflow-y: auto;
+    }
+    #bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0; height: 64px;
+      background: #fff;
+      border-top: 1px solid var(--gray-2);
+      display: flex; z-index: 100;
+    }
+    .nav-item {
+      flex: 1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: .65rem; color: var(--gray-5);
+      cursor: pointer; gap: 2px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .nav-item span.icon { font-size: 1.4rem; }
+    .nav-item.active { color: var(--blue); }
+
+    /* -------------------------------------------------------
+       Views
+    ------------------------------------------------------- */
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* -------------------------------------------------------
+       Cards
+    ------------------------------------------------------- */
+    .card {
+      background: #fff;
+      border-radius: var(--radius);
+      border: 1px solid var(--gray-2);
+      padding: 1rem;
+      margin-bottom: .75rem;
+    }
+    .card-title {
+      font-size: .85rem; font-weight: 700; color: var(--blue);
+      margin-bottom: .75rem;
+    }
+
+    /* -------------------------------------------------------
+       Form elements
+    ------------------------------------------------------- */
+    label { display: block; font-size: .8rem; color: var(--gray-5); margin-bottom: .2rem; }
+    select, input[type="text"], input[type="file"] {
+      width: 100%; padding: .55rem .75rem;
+      border: 1.5px solid var(--gray-2);
+      border-radius: 8px; margin-bottom: .65rem;
+      background: #fff; color: var(--gray-9);
+    }
+    .btn {
+      display: block; width: 100%;
+      padding: .75rem; border: none;
+      border-radius: var(--radius);
+      font-size: 1rem; font-weight: 700;
+      cursor: pointer; text-align: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-primary { background: var(--blue); color: #fff; margin-bottom: .5rem; }
+    .btn-success { background: var(--green);color: #fff; margin-bottom: .5rem; }
+    .btn-danger  { background: var(--red);  color: #fff; }
+    .btn-sm {
+      display: inline-block; width: auto;
+      padding: .3rem .7rem; font-size: .8rem;
+      border-radius: 6px; font-weight: 600;
+    }
+
+    /* -------------------------------------------------------
+       File list
+    ------------------------------------------------------- */
+    .file-item {
+      display: flex; align-items: center; gap: .75rem;
+      padding: .65rem 0;
+      border-bottom: 1px solid var(--gray-2);
+    }
+    .file-item:last-child { border-bottom: none; }
+    .file-icon { font-size: 1.6rem; flex-shrink: 0; }
+    .file-info { flex: 1; overflow: hidden; }
+    .file-name {
+      font-size: .9rem; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .file-meta { font-size: .75rem; color: var(--gray-5); }
+    .file-actions { display: flex; gap: .4rem; flex-shrink: 0; }
+
+    /* -------------------------------------------------------
+       Quota bar
+    ------------------------------------------------------- */
+    .quota-bar {
+      background: var(--gray-2); border-radius: 99px;
+      height: 10px; margin: .4rem 0;
+    }
+    .quota-fill {
+      height: 10px; border-radius: 99px;
+      background: var(--blue); transition: width .4s;
+    }
+
+    /* -------------------------------------------------------
+       Badges
+    ------------------------------------------------------- */
+    .badge {
+      display: inline-block; padding: .15rem .55rem;
+      border-radius: 99px; font-size: .7rem; font-weight: 700;
+    }
+    .badge-ok  { background: #dcfce7; color: #166534; }
+    .badge-err { background: #fee2e2; color: #991b1b; }
+
+    /* -------------------------------------------------------
+       Toast
+    ------------------------------------------------------- */
+    #toast {
+      position: fixed; bottom: 74px; left: 1rem; right: 1rem;
+      background: var(--gray-9); color: #fff;
+      padding: .75rem 1rem; border-radius: var(--radius);
+      font-size: .9rem; display: none; z-index: 999;
+      box-shadow: 0 4px 16px rgba(0,0,0,.3);
+      text-align: center;
+    }
+    #toast.show { display: block; }
+
+    /* -------------------------------------------------------
+       Empty state
+    ------------------------------------------------------- */
+    .empty { color: var(--gray-5); font-size: .9rem; text-align: center; padding: 1rem 0; }
+  </style>
+</head>
+<body>
+
+<div id="app-header">☁️ MultiCloud Mobile</div>
+
+<div id="app-content">
+
+  <!-- ==================== FILES VIEW ==================== -->
+  <div id="view-files" class="view active">
+    <div class="card">
+      <div class="card-title">Browse Files</div>
+      <label>Provider</label>
+      <select id="m-files-provider"></select>
+      <button class="btn btn-primary" onclick="mLoadFiles()">Refresh Files</button>
+    </div>
+    <div id="m-files-list">
+      <div class="empty">Select a provider and tap Refresh.</div>
+    </div>
+  </div>
+
+  <!-- ==================== UPLOAD VIEW ==================== -->
+  <div id="view-upload" class="view">
+    <div class="card">
+      <div class="card-title">Upload File</div>
+      <label>Provider</label>
+      <select id="m-upload-provider"></select>
+      <label>Remote Path</label>
+      <input type="text" id="m-upload-path" value="/" />
+      <label>Choose File</label>
+      <input type="file" id="m-upload-file" />
+      <button class="btn btn-success" onclick="mUpload()">Upload</button>
+    </div>
+    <div id="m-upload-result"></div>
+  </div>
+
+  <!-- ==================== TRANSFER VIEW ==================== -->
+  <div id="view-transfer" class="view">
+    <div class="card">
+      <div class="card-title">Transfer Between Providers</div>
+      <label>Operation</label>
+      <select id="m-op">
+        <option value="copy">Copy (keep original)</option>
+        <option value="move">Move (delete original)</option>
+      </select>
+      <label>Source</label>
+      <select id="m-src"></select>
+      <label>File ID</label>
+      <input type="text" id="m-fileid" placeholder="Paste file ID from Files tab" />
+      <label>Destination</label>
+      <select id="m-dst"></select>
+      <label>Destination Path</label>
+      <input type="text" id="m-path" value="/" />
+      <button class="btn btn-success" onclick="mTransfer()">Execute Transfer</button>
+    </div>
+    <div id="m-transfer-result"></div>
+  </div>
+
+  <!-- ==================== HISTORY VIEW ==================== -->
+  <div id="view-history" class="view">
+    <div class="card">
+      <div class="card-title">Recent Transfers</div>
+      <button class="btn btn-primary" onclick="mLoadHistory()">Refresh History</button>
+    </div>
+    <div id="m-history-list">
+      <div class="empty">Tap Refresh to load history.</div>
+    </div>
+  </div>
+
+  <!-- ==================== QUOTA VIEW ==================== -->
+  <div id="view-quota" class="view">
+    <div class="card">
+      <div class="card-title">Storage Quota</div>
+      <button class="btn btn-primary" onclick="mLoadQuota()">Check All Providers</button>
+    </div>
+    <div id="m-quota-list"></div>
+  </div>
+
+</div>
+
+<!-- Bottom navigation -->
+<nav id="bottom-nav">
+  <div class="nav-item active" onclick="mShow('view-files',this)">
+    <span class="icon">📁</span><span>Files</span>
+  </div>
+  <div class="nav-item" onclick="mShow('view-upload',this)">
+    <span class="icon">⬆️</span><span>Upload</span>
+  </div>
+  <div class="nav-item" onclick="mShow('view-transfer',this)">
+    <span class="icon">🔄</span><span>Transfer</span>
+  </div>
+  <div class="nav-item" onclick="mShow('view-history',this)">
+    <span class="icon">📋</span><span>History</span>
+  </div>
+  <div class="nav-item" onclick="mShow('view-quota',this)">
+    <span class="icon">💾</span><span>Quota</span>
+  </div>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+  /* -------------------------------------------------------
+     Configuration — update SERVER_URL to your PC's LAN IP
+     when testing on a real mobile device.
+  ------------------------------------------------------- */
+  const SERVER_URL = "http://127.0.0.1:5000";
+  const API = SERVER_URL + "/api";
+
+  /* -------------------------------------------------------
+     Utility helpers
+  ------------------------------------------------------- */
+  function toast(msg, ms = 3000) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    setTimeout(() => el.classList.remove("show"), ms);
+  }
+
+  async function apiFetch(path, options = {}) {
+    try {
+      const res  = await fetch(API + path, options);
+      const data = await res.json();
+      if (!res.ok) { toast("⚠️ " + (data.error || "Server error")); return null; }
+      return data;
+    } catch {
+      toast("🔌 Cannot reach server. Is server.py running?");
+      return null;
+    }
+  }
+
+  function fmt(bytes) {
+    const u = ["B","KB","MB","GB"];
+    let i = 0;
+    while (bytes >= 1024 && i < u.length - 1) { bytes /= 1024; i++; }
+    return bytes.toFixed(1) + " " + u[i];
+  }
+
+  function fileIcon(name) {
+    const ext = name.split(".").pop().toLowerCase();
+    const map  = { pdf:"📄", jpg:"🖼", jpeg:"🖼", png:"🖼", gif:"🖼",
+                   mp4:"🎬", mp3:"🎵", zip:"🗜", docx:"📝", xlsx:"📊",
+                   py:"🐍", txt:"📃" };
+    return map[ext] || "📁";
+  }
+
+  /* -------------------------------------------------------
+     Navigation
+  ------------------------------------------------------- */
+  function mShow(viewId, navEl) {
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.getElementById(viewId).classList.add("active");
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+    navEl.classList.add("active");
+  }
+
+  /* -------------------------------------------------------
+     Bootstrap providers into all <select> elements
+  ------------------------------------------------------- */
+  async function mInitProviders() {
+    const data = await apiFetch("/providers");
+    if (!data) return;
+    const selIds = ["m-files-provider","m-upload-provider","m-src","m-dst"];
+    selIds.forEach(id => {
+      const sel = document.getElementById(id);
+      sel.innerHTML = data.providers
+        .map(n => `<option value="${n}">${n}</option>`).join("");
+    });
+  }
+
+  /* -------------------------------------------------------
+     FILES VIEW
+  ------------------------------------------------------- */
+  async function mLoadFiles() {
+    const provider = document.getElementById("m-files-provider").value;
+    const data = await apiFetch(`/files?provider=${encodeURIComponent(provider)}`);
+    const container = document.getElementById("m-files-list");
+    if (!data) return;
+    if (!data.files.length) {
+      container.innerHTML = `<div class="card"><div class="empty">No files found.</div></div>`;
+      return;
+    }
+    container.innerHTML = `<div class="card">` +
+      data.files.map(f => `
+        <div class="file-item">
+          <div class="file-icon">${fileIcon(f.name)}</div>
+          <div class="file-info">
+            <div class="file-name">${f.name}</div>
+            <div class="file-meta">${fmt(f.size)} · ${f.modified.slice(0,10)}</div>
+            <div class="file-meta" style="font-size:.68rem">${f.file_id}</div>
+          </div>
+          <div class="file-actions">
+            <a href="${API}/download/${encodeURIComponent(provider)}/${f.file_id}"
+               class="btn btn-primary btn-sm" download>⬇</a>
+            <button class="btn btn-danger btn-sm"
+              onclick="mDelete('${provider}','${f.file_id}')">🗑</button>
+          </div>
+        </div>`).join("") +
+      `</div>`;
+  }
+
+  async function mDelete(provider, fileId) {
+    if (!confirm("Delete this file permanently?")) return;
+    const data = await apiFetch(
+      `/delete/${encodeURIComponent(provider)}/${fileId}`,
+      { method: "DELETE" }
+    );
+    if (data) { toast("✅ Deleted"); mLoadFiles(); }
+  }
+
+  /* -------------------------------------------------------
+     UPLOAD VIEW
+  ------------------------------------------------------- */
+  async function mUpload() {
+    const provider = document.getElementById("m-upload-provider").value;
+    const path     = document.getElementById("m-upload-path").value || "/";
+    const fileEl   = document.getElementById("m-upload-file");
+    if (!fileEl.files.length) { toast("Please choose a file first."); return; }
+
+    const fd = new FormData();
+    fd.append("provider", provider);
+    fd.append("path", path);
+    fd.append("file", fileEl.files[0]);
+
+    toast("Uploading…", 10000);
+    const data = await apiFetch("/upload", { method: "POST", body: fd });
+    const resultEl = document.getElementById("m-upload-result");
+    if (data) {
+      toast("✅ Upload successful!");
+      resultEl.innerHTML = `
+        <div class="card" style="border-color:var(--green)">
+          ✅ <strong>${data.cloud_file.name}</strong><br/>
+          ${fmt(data.cloud_file.size)} uploaded to ${data.cloud_file.provider}
+        </div>`;
+      fileEl.value = "";
+    }
+  }
+
+  /* -------------------------------------------------------
+     TRANSFER VIEW
+  ------------------------------------------------------- */
+  async function mTransfer() {
+    const body = {
+      operation:   document.getElementById("m-op").value,
+      source:      document.getElementById("m-src").value,
+      destination: document.getElementById("m-dst").value,
+      file_id:     document.getElementById("m-fileid").value.trim(),
+      path:        document.getElementById("m-path").value || "/",
+    };
+    if (!body.file_id) { toast("Please paste a File ID."); return; }
+    if (body.source === body.destination) {
+      toast("Source and destination must differ."); return;
+    }
+    toast("Transferring…", 10000);
+    const data = await apiFetch("/transfer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const resultEl = document.getElementById("m-transfer-result");
+    if (data) {
+      const ok = data.status === "success";
+      toast(ok ? "✅ Transfer complete!" : "❌ Transfer failed.");
+      resultEl.innerHTML = `
+        <div class="card" style="border-color:${ok ? "var(--green)":"var(--red)"}">
+          <span class="badge ${ok?"badge-ok":"badge-err"}">${data.status}</span>
+          <strong>${data.operation}</strong> "${data.file_name}"<br/>
+          ${data.source} → ${data.destination}<br/>
+          <small>${data.duration_secs.toFixed(2)}s${data.message ? " · " + data.message : ""}</small>
+        </div>`;
+    }
+  }
+
+  /* -------------------------------------------------------
+     HISTORY VIEW
+  ------------------------------------------------------- */
+  async function mLoadHistory() {
+    const data = await apiFetch("/history?limit=20");
+    if (!data) return;
+    const container = document.getElementById("m-history-list");
+    if (!data.history.length) {
+      container.innerHTML = `<div class="card"><div class="empty">No transfers yet.</div></div>`;
+      return;
+    }
+    container.innerHTML = data.history.map(r => {
+      const ok = r.status === "success";
+      return `
+        <div class="card" style="padding:.75rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem">
+            <strong style="font-size:.9rem">${r.file_name}</strong>
+            <span class="badge ${ok?"badge-ok":"badge-err"}">${r.status}</span>
+          </div>
+          <div style="font-size:.8rem;color:var(--gray-5)">
+            ${r.operation} · ${r.source} → ${r.destination}<br/>
+            ${r.timestamp.slice(0,16).replace("T"," ")} · ${r.duration_secs.toFixed(2)}s
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  /* -------------------------------------------------------
+     QUOTA VIEW
+  ------------------------------------------------------- */
+  async function mLoadQuota() {
+    const names = Array.from(
+      document.getElementById("m-files-provider").options
+    ).map(o => o.value);
+
+    const container = document.getElementById("m-quota-list");
+    container.innerHTML = "";
+
+    for (const name of names) {
+      const data = await apiFetch(`/quota?provider=${encodeURIComponent(name)}`);
+      if (!data) continue;
+      const pct = data.total > 0
+        ? ((data.used / data.total) * 100).toFixed(1) : 0;
+      container.innerHTML += `
+        <div class="card">
+          <div class="card-title">${name}</div>
+          <div class="quota-bar">
+            <div class="quota-fill" style="width:${pct}%"></div>
+          </div>
+          <small>${fmt(data.used)} of ${fmt(data.total)} used (${pct}%)</small>
+        </div>`;
+    }
+  }
+
+  /* -------------------------------------------------------
+     Boot
+  ------------------------------------------------------- */
+  mInitProviders();
+</script>
+</body>
+</html>

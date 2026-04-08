@@ -1,0 +1,11 @@
+# requirements.txt
+# -----------------
+# Python dependencies for the Multi-Cloud Platform prototype.
+# Install with:  pip install -r requirements.txt
+
+flask>=3.0.0          # Web API server and web front-end serving
+werkzeug>=3.0.0       # Secure filename handling (comes with Flask)
+
+# Standard library modules used (no install needed):
+#   os, sys, shutil, hashlib, sqlite3, argparse, tempfile,
+#   datetime, dataclasses, abc, unittest
