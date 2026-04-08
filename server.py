@@ -293,11 +293,10 @@ def create_app(config: dict = None) -> Flask:
 # Entry point
 # ---------------------------------------------------------------------------
 
+app = create_app()
+
 if __name__ == "__main__":
-    app = create_app()
-    print("\n" + "=" * 60)
-    print("  Multi-Cloud Platform Server")
-    print("  Running at:  http://127.0.0.1:5000")
-    print("  API base:    http://127.0.0.1:5000/api")
-    print("=" * 60 + "\n")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    print(f"\nRunning at: http://0.0.0.0:{port}\n")
+    app.run(host="0.0.0.0", port=port, debug=False)
