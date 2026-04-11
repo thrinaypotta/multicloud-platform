@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MultiCloud Platform</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--b:#f65300;--g:#16a34a;--r:#dc2626;--g1:#f1f5f9;--g2:#e2e8f0;--g5:#64748b;--g9:#0f172a;--rad:8px}
+body{font-family:system-ui,sans-serif;background:var(--g1);color:var(--g9)}
+header{background:var(--b);color:#fff;padding:0 2rem;height:56px;display:flex;align-items:center;gap:1rem}
+header h1{font-size:1.1rem;font-weight:700}header span{opacity:.7;font-size:.85rem}
+.layout{display:grid;grid-template-columns:200px 1fr;gap:1.5rem;padding:1.5rem;max-width:1200px;margin:0 auto}
+@media(max-width:650px){.layout{grid-template-columns:1fr}}
+aside{display:flex;flex-direction:column;gap:.5rem}
+.nb{background:#fff;border:1.5px solid var(--g2);border-radius:var(--rad);padding:.6rem 1rem;font-size:.9rem;cursor:pointer;text-align:left}
+.nb:hover{background:var(--g1)}.nb.on{background:var(--b);color:#fff;border-color:var(--b)}
+.card{background:#fff;border-radius:var(--rad);border:1px solid var(--g2);padding:1.25rem;margin-bottom:1rem}
+.card h2{font-size:1rem;margin-bottom:1rem;color:var(--b)}
+label{display:block;font-size:.85rem;color:var(--g5);margin-bottom:.2rem}
+select,input[type=text],input[type=file]{width:100%;padding:.5rem .75rem;border:1.5px solid var(--g2);border-radius:var(--rad);font-size:.9rem;margin-bottom:.75rem;background:#fff}
+.btn{display:inline-block;padding:.5rem 1.2rem;border:none;border-radius:var(--rad);font-size:.9rem;cursor:pointer;font-weight:600}
+.btn:hover{opacity:.85}.bp{background:var(--b);color:#fff}.bg{background:var(--g);color:#fff}.br{background:var(--r);color:#fff}
+.sm{padding:.3rem .7rem;font-size:.8rem}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{text-align:left;padding:.5rem .75rem;background:var(--g1);color:var(--g5);font-weight:600;border-bottom:1px solid var(--g2)}
+td{padding:.5rem .75rem;border-bottom:1px solid var(--g2);word-break:break-all}
+tr:hover td{background:var(--g1)}
+.badge{display:inline-block;padding:.1rem .5rem;border-radius:99px;font-size:.75rem;font-weight:700}
+.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
+.qbar{background:var(--g2);border-radius:99px;height:8px;margin:.5rem 0}
+.qfill{height:8px;border-radius:99px;background:var(--b);transition:width .4s}
+#toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--g9);color:#fff;padding:.75rem 1.25rem;border-radius:var(--rad);font-size:.9rem;display:none;z-index:999}
+#toast.show{display:block}
+.view{display:none}.view.on{display:block}
+</style></head><body>
+<header><h1>☁️ MultiCloud Platform</h1><span>Local Server/Render</span></header>
+<div class="layout">
+<aside>
+  <button class="nb on" onclick="show('files',this)">📁 Files</button>
+  <button class="nb" onclick="show('upload',this)">⬆️ Upload</button>
+  <button class="nb" onclick="show('transfer',this)">🔄 Transfer</button>
+  <button class="nb" onclick="show('history',this)">📋 History</button>
+  <button class="nb" onclick="show('quota',this)">💾 Quota</button>
+  <button class="nb" onclick="show('stats',this)">📊 Stats</button>
+</aside>
+<main>
+  <div id="files" class="view on">
+    <div class="card"><h2>Browse Files</h2>
+      <label>Provider</label><select id="fp"></select>
+      <button class="btn bp" onclick="loadFiles()">Refresh</button>
+    </div>
+    <div class="card"><table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>ID</th><th>Actions</th></tr></thead>
+    <tbody id="ftb"><tr><td colspan="5" style="color:var(--g5)">Select a provider and click Refresh.</td></tr></tbody></table></div>
+  </div>
+  <div id="upload" class="view">
+    <div class="card"><h2>Upload File</h2>
+      <label>Provider</label><select id="up"></select>
+      <label>Remote Path</label><input type="text" id="upath" value="/"/>
+      <label>File</label><input type="file" id="ufile"/>
+      <button class="btn bp" onclick="doUpload()">Upload</button>
+    </div><div id="ures"></div>
+  </div>
+  <div id="transfer" class="view">
+    <div class="card"><h2>Copy / Move Between Providers</h2>
+      <label>Operation</label>
+      <select id="top"><option value="copy">Copy (keep original)</option><option value="move">Move (delete original)</option></select>
+      <label>Source</label><select id="tsrc"></select>
+      <label>File ID (from Files view)</label><input type="text" id="tid" placeholder="Paste file ID here"/>
+      <label>Destination</label><select id="tdst"></select>
+      <label>Destination Path</label><input type="text" id="tpath" value="/"/>
+      <button class="btn bg" onclick="doTransfer()">Execute</button>
+    </div><div id="tres"></div>
+  </div>
+  <div id="history" class="view">
+    <div class="card"><h2>Transfer History</h2><button class="btn bp" onclick="loadHistory()">Refresh</button></div>
+    <div class="card"><table><thead><tr><th>Time</th><th>Op</th><th>File</th><th>From</th><th>To</th><th>Status</th><th>s</th></tr></thead>
+    <tbody id="htb"><tr><td colspan="7" style="color:var(--g5)">Click Refresh.</td></tr></tbody></table></div>
+  </div>
+  <div id="quota" class="view">
+    <div class="card"><h2>Storage Quota</h2><button class="btn bp" onclick="loadQuota()">Check All</button></div>
+    <div id="qc"></div>
+  </div>
+  <div id="stats" class="view">
+    <div class="card"><h2>Statistics</h2><button class="btn bp" onclick="loadStats()">Refresh</button></div>
+    <div id="sg" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem"></div>
+  </div>
+</main></div>
+<div id="toast"></div>
+<script>
+const API = window.location.origin + "/api";
+function toast(m,ms=3000){const e=document.getElementById("toast");e.textContent=m;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),ms)}
+async function api(path,opt={}){try{const r=await fetch(API+path,opt);const d=await r.json();if(!r.ok){toast("⚠️ "+(d.error||"Error"));return null}return d}catch{toast("🔌 Cannot reach server.");return null}}
+function fmt(b){const u=["B","KB","MB","GB"];let i=0;while(b>=1024&&i<3){b/=1024;i++}return b.toFixed(1)+" "+u[i]}
+function show(id,btn){document.querySelectorAll(".view").forEach(v=>v.classList.remove("on"));document.getElementById(id).classList.add("on");document.querySelectorAll(".nb").forEach(b=>b.classList.remove("on"));btn.classList.add("on")}
+async function init(){const d=await api("/providers");if(!d)return;["fp","up","tsrc","tdst"].forEach(id=>{const s=document.getElementById(id);s.innerHTML=d.providers.map(n=>`<option>${n}</option>`).join("")})}
+async function loadFiles(){const p=document.getElementById("fp").value,d=await api(`/files?provider=${encodeURIComponent(p)}`),tb=document.getElementById("ftb");if(!d)return;if(!d.files.length){tb.innerHTML=`<tr><td colspan="5" style="color:var(--g5)">No files found.</td></tr>`;return}tb.innerHTML=d.files.map(f=>`<tr><td>${f.name}</td><td>${fmt(f.size)}</td><td>${f.modified.slice(0,16).replace("T"," ")}</td><td style="font-size:.75rem;color:var(--g5)">${f.file_id}</td><td><a href="${API}/download/${encodeURIComponent(p)}/${f.file_id}" class="btn bp sm" download>⬇</a> <button class="btn br sm" onclick="del('${p}','${f.file_id}')">🗑</button></td></tr>`).join("")}
+async function del(p,id){if(!confirm("Delete permanently?"))return;const d=await api(`/delete/${encodeURIComponent(p)}/${id}`,{method:"DELETE"});if(d){toast("✅ Deleted");loadFiles()}}
+async function doUpload(){const p=document.getElementById("up").value,path=document.getElementById("upath").value||"/",fe=document.getElementById("ufile");if(!fe.files.length){toast("Choose a file.");return}const fd=new FormData();fd.append("provider",p);fd.append("path",path);fd.append("file",fe.files[0]);const d=await api("/upload",{method:"POST",body:fd});if(d){toast("✅ Uploaded!");document.getElementById("ures").innerHTML=`<div class="card" style="border-color:var(--g)">✅ <b>${d.cloud_file.name}</b> (${fmt(d.cloud_file.size)}) → ${d.cloud_file.provider}</div>`;fe.value=""}}
+async function doTransfer(){const b={operation:document.getElementById("top").value,source:document.getElementById("tsrc").value,destination:document.getElementById("tdst").value,file_id:document.getElementById("tid").value.trim(),path:document.getElementById("tpath").value||"/"};if(!b.file_id){toast("Enter a File ID.");return}if(b.source===b.destination){toast("Source and destination must differ.");return}const d=await api("/transfer",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});if(d){const ok=d.status==="success";toast(ok?"✅ Done!":"❌ Failed.");document.getElementById("tres").innerHTML=`<div class="card" style="border-color:${ok?"var(--g)":"var(--r)"}"><b>${d.operation.toUpperCase()}</b> "${d.file_name}"<br>${d.source} → ${d.destination}<br><span class="badge ${ok?"ok":"err"}">${d.status}</span> ${d.duration.toFixed(2)}s</div>`}}
+async function loadHistory(){const d=await api("/history?limit=50");if(!d)return;const tb=document.getElementById("htb");if(!d.history.length){tb.innerHTML=`<tr><td colspan="7" style="color:var(--g5)">No transfers yet.</td></tr>`;return}tb.innerHTML=d.history.map(r=>`<tr><td>${r.timestamp.slice(0,16).replace("T"," ")}</td><td>${r.operation}</td><td>${r.file_name}</td><td>${r.source}</td><td>${r.destination}</td><td><span class="badge ${r.status==="success"?"ok":"err"}">${r.status}</span></td><td>${r.duration.toFixed(2)}</td></tr>`).join("")}
+async function loadQuota(){const names=Array.from(document.getElementById("fp").options).map(o=>o.value);const c=document.getElementById("qc");c.innerHTML="";for(const n of names){const d=await api(`/quota?provider=${encodeURIComponent(n)}`);if(!d)continue;const p=d.total>0?((d.used/d.total)*100).toFixed(1):0;c.innerHTML+=`<div class="card"><h2>${n}</h2><div class="qbar"><div class="qfill" style="width:${p}%"></div></div><small>${fmt(d.used)} of ${fmt(d.total)} (${p}%)</small></div>`}}
+async function loadStats(){const d=await api("/stats");if(!d)return;document.getElementById("sg").innerHTML=[["📁 Files",d.total_files],["🔄 Transfers",d.total_transfers],["✅ OK",d.successful],["❌ Failed",d.failed]].map(([l,v])=>`<div class="card" style="text-align:center"><div style="font-size:1.6rem;font-weight:700">${v}</div><div style="font-size:.85rem;color:var(--g5)">${l}</div></div>`).join("")}
+init();
+</script></body></html>

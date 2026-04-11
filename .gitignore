@@ -1,8 +1,0 @@
-sim_google/
-sim_onedrive/
-multicloud.db
-multicloud.db-shm
-multicloud.db-wal
-__pycache__/
-*.pyc
-*.mcid

@@ -1,303 +1,143 @@
 """
 server.py
----------
-Flask-based REST API server for the Multi-Cloud Platform.
-Exposes HTTP endpoints that the web front-end and mobile app consume.
-Runs locally on the user's PC to simulate a prototype backend.
+The waiter of the project. The website asks for things, the server
+does the work and sends the answer back as JSON.
 
 Endpoints:
-  GET  /api/providers              -- list registered providers
-  GET  /api/files?provider=<name>  -- list files on a provider
-  POST /api/upload                 -- upload a file to a provider
-  GET  /api/download/<provider>/<file_id> -- download a file
-  DELETE /api/delete/<provider>/<file_id> -- delete a file
-  POST /api/transfer               -- copy/move between providers
-  GET  /api/history                -- transfer history
-  GET  /api/quota?provider=<name>  -- quota for a provider
-  GET  /api/stats                  -- database statistics
-  GET  /                           -- serve the web front-end
+    GET    /                              sends back the website
+    GET    /api/providers                 what clouds do we support?
+    GET    /api/files?provider=X          list files on cloud X
+    POST   /api/upload                    receive and store a file
+    GET    /api/download/<cloud>/<id>     send a file to the browser
+    DELETE /api/delete/<cloud>/<id>       delete a file
+    POST   /api/transfer                  copy or move between clouds
+    GET    /api/history                   show past transfers
+    GET    /api/quota?provider=X          how full is cloud X?
+    GET    /api/stats                     overall numbers
 
-Course concepts used: Web API (Flask), Object-Oriented Programming,
-                      Database Integration
+Run locally:   python server.py
+Render:        gunicorn server:app
+
+
 """
 
-import os
-import json
-import tempfile
-from flask import Flask, request, jsonify, send_from_directory, send_file
+import os, tempfile
+from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
-
-from cloud_provider import (
-    GoogleDriveProvider,
-    OneDriveProvider,
-    ProviderRegistry,
-    CloudException,
-)
+from cloud_provider import (GoogleDriveProvider, OneDriveProvider,
+                            ProviderRegistry, CloudException)
 from transfer import TransferEngine
 from database import Database
 
 
-# ---------------------------------------------------------------------------
-# Application factory
-# ---------------------------------------------------------------------------
+def create_app() -> Flask:
+    """Builds and boots up the whole Flask application."""
 
-def create_app(config: dict = None) -> Flask:
-    """
-    Create and configure the Flask application.
+    app = Flask(__name__, static_folder=".", static_url_path="")
+    app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # max upload: 500 MB
+    app.config["TMP"] = tempfile.mkdtemp(prefix="mc_up_")
 
-    :param config: Optional dict overriding default configuration values.
-    :return: Configured Flask app instance.
-    """
-    app = Flask(__name__, static_folder="web")
-    app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024   # 500 MB upload limit
-    app.config["UPLOAD_TEMP_DIR"] = tempfile.mkdtemp(prefix="mc_upload_")
-
-    if config:
-        app.config.update(config)
-
-    # -- Initialise providers ------------------------------------------------
-    google = GoogleDriveProvider(
-        credentials={"api_key": "demo-google-key"},
-        storage_root="sim_google",
-    )
-    onedrive = OneDriveProvider(
-        credentials={"client_id": "demo-client-id",
-                     "client_secret": "demo-client-secret"},
-        storage_root="sim_onedrive",
-    )
+    google   = GoogleDriveProvider({"api_key": "demo-key"})
+    onedrive = OneDriveProvider({"client_id": "demo-id", "client_secret": "demo-secret"})
     google.authenticate()
     onedrive.authenticate()
-
     ProviderRegistry.register(google)
     ProviderRegistry.register(onedrive)
 
-    # -- Shared services -------------------------------------------------
-    app.transfer_engine = TransferEngine()
-    app.db = Database("multicloud.db")
-
-    # ------------------------------------------------------------------ #
-    # ROUTES                                                               #
-    # ------------------------------------------------------------------ #
+    app.engine = TransferEngine()
+    app.db     = Database()
 
     @app.route("/")
     def index():
-        """Serve the single-page web application."""
-        return send_from_directory("web", "index.html")
+        return send_file("index.html")
 
-    # -- Provider routes -----------------------------------------------------
+    @app.route("/api/providers")
+    def providers():
+        return jsonify({"providers": ProviderRegistry.names()})
 
-    @app.route("/api/providers", methods=["GET"])
-    def list_providers():
-        """Return a JSON list of all registered cloud provider names."""
-        return jsonify({
-            "providers": ProviderRegistry.provider_names()
-        })
-
-    # -- File routes ---------------------------------------------------------
-
-    @app.route("/api/files", methods=["GET"])
-    def list_files():
-        """
-        List files on a cloud provider.
-        Query param: provider (required), path (optional, default '/')
-        """
-        provider_name = request.args.get("provider")
+    @app.route("/api/files")
+    def files():
+        name = request.args.get("provider")
         path = request.args.get("path", "/")
-
-        if not provider_name:
-            return jsonify({"error": "Query param 'provider' is required."}), 400
-
+        if not name: return jsonify({"error": "'provider' required"}), 400
         try:
-            provider = ProviderRegistry.get(provider_name)
-            files = provider.list_files(path)
-            return jsonify({
-                "provider": provider_name,
-                "path":     path,
-                "files":    [f.to_dict() for f in files],
-            })
-        except KeyError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except CloudException as exc:
-            return jsonify({"error": str(exc)}), 500
+            return jsonify({"provider": name, "path": path,
+                            "files": [f.to_dict() for f in ProviderRegistry.get(name).list_files(path)]})
+        except (KeyError, CloudException) as e: return jsonify({"error": str(e)}), 404
 
     @app.route("/api/upload", methods=["POST"])
-    def upload_file():
-        """
-        Upload a file to a cloud provider.
-        Form data: provider (str), path (str, optional), file (binary)
-        """
-        provider_name = request.form.get("provider")
-        remote_path   = request.form.get("path", "/")
-
-        if not provider_name:
-            return jsonify({"error": "'provider' field is required."}), 400
-        if "file" not in request.files:
-            return jsonify({"error": "No file part in the request."}), 400
-
-        file_obj = request.files["file"]
-        if file_obj.filename == "":
-            return jsonify({"error": "No file selected."}), 400
-
+    def upload():
+        name = request.form.get("provider")
+        path = request.form.get("path", "/")
+        if not name or "file" not in request.files:
+            return jsonify({"error": "Missing provider or file"}), 400
+        f   = request.files["file"]
+        # secure_filename strips out unwanted characters like "../" from the filename
+        tmp = os.path.join(app.config["TMP"], secure_filename(f.filename))
+        f.save(tmp)
         try:
-            provider = ProviderRegistry.get(provider_name)
-        except KeyError as exc:
-            return jsonify({"error": str(exc)}), 404
+            cf = ProviderRegistry.get(name).upload(tmp, path)
+            app.db.save_file(cf)
+            os.unlink(tmp)  # delete the temp copy once the cloud has it
+            return jsonify({"message": "Upload successful.", "cloud_file": cf.to_dict()}), 201
+        except (KeyError, CloudException) as e: return jsonify({"error": str(e)}), 500
 
-        # Save to temp dir then upload to provider
-        filename    = secure_filename(file_obj.filename)
-        temp_path   = os.path.join(app.config["UPLOAD_TEMP_DIR"], filename)
-        file_obj.save(temp_path)
-
+    @app.route("/api/download/<pname>/<file_id>")
+    def download(pname, file_id):
         try:
-            cloud_file = provider.upload(temp_path, remote_path)
-            app.db.save_file(cloud_file)
-            os.unlink(temp_path)  # remove temp copy
-            return jsonify({
-                "message":    "Upload successful.",
-                "cloud_file": cloud_file.to_dict(),
-            }), 201
-        except CloudException as exc:
-            return jsonify({"error": str(exc)}), 500
+            d    = tempfile.mkdtemp()
+            path = ProviderRegistry.get(pname).download(file_id, d)
+            return send_file(path, as_attachment=True, download_name=os.path.basename(path))
+        except (KeyError, CloudException) as e: return jsonify({"error": str(e)}), 404
 
-    @app.route("/api/download/<provider_name>/<file_id>", methods=["GET"])
-    def download_file(provider_name: str, file_id: str):
-        """
-        Download a file from a cloud provider and stream it to the client.
-        URL params: provider_name, file_id
-        """
+    @app.route("/api/delete/<pname>/<file_id>", methods=["DELETE"])
+    def delete(pname, file_id):
         try:
-            provider    = ProviderRegistry.get(provider_name)
-            local_dir   = tempfile.mkdtemp(prefix="mc_dl_")
-            local_path  = provider.download(file_id, local_dir)
-            return send_file(local_path, as_attachment=True,
-                             download_name=os.path.basename(local_path))
-        except KeyError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except CloudException as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/api/delete/<provider_name>/<file_id>", methods=["DELETE"])
-    def delete_file(provider_name: str, file_id: str):
-        """
-        Delete a file from a cloud provider and remove its DB record.
-        URL params: provider_name, file_id
-        """
-        try:
-            provider = ProviderRegistry.get(provider_name)
-            provider.delete(file_id)
-            app.db.delete_file_record(file_id)
-            return jsonify({"message": f"File '{file_id}' deleted from {provider_name}."}), 200
-        except KeyError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except CloudException as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    # -- Transfer routes -----------------------------------------------------
+            ProviderRegistry.get(pname).delete(file_id)
+            app.db.delete_file(file_id)
+            return jsonify({"message": f"'{file_id}' deleted."})
+        except (KeyError, CloudException) as e: return jsonify({"error": str(e)}), 404
 
     @app.route("/api/transfer", methods=["POST"])
-    def transfer_file():
-        """
-        Copy or move a file between two cloud providers.
-        JSON body:
-          {
-            "operation":   "copy" | "move",
-            "source":      "<provider name>",
-            "destination": "<provider name>",
-            "file_id":     "<cloud file id>",
-            "path":        "<destination remote path>"   (optional)
-          }
-        """
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error": "JSON body required."}), 400
-
-        operation   = data.get("operation", "copy")
-        source_name = data.get("source")
-        dest_name   = data.get("destination")
-        file_id     = data.get("file_id")
-        remote_path = data.get("path", "/")
-
-        if not all([source_name, dest_name, file_id]):
-            return jsonify({
-                "error": "'source', 'destination', and 'file_id' are all required."
-            }), 400
-
+    def transfer():
+        # browser sends JSON: which file, from where, to where, copy or move
+        d   = request.get_json(silent=True) or {}
+        op  = d.get("operation", "copy")
+        src = d.get("source"); dst = d.get("destination"); fid = d.get("file_id")
+        if not all([src, dst, fid]):
+            return jsonify({"error": "source, destination, file_id required"}), 400
         try:
-            source      = ProviderRegistry.get(source_name)
-            destination = ProviderRegistry.get(dest_name)
-        except KeyError as exc:
-            return jsonify({"error": str(exc)}), 404
+            s = ProviderRegistry.get(src); t = ProviderRegistry.get(dst)
+        except KeyError as e: return jsonify({"error": str(e)}), 404
+        fn  = app.engine.copy if op == "copy" else app.engine.move
+        rec = fn(s, t, fid, d.get("path", "/"))
+        app.db.save_transfer(rec)
+        return jsonify(rec.to_dict()), 200 if rec.status == "success" else 500
 
-        if operation == "copy":
-            record = app.transfer_engine.copy(source, destination,
-                                              file_id, remote_path)
-        elif operation == "move":
-            record = app.transfer_engine.move(source, destination,
-                                              file_id, remote_path)
-        else:
-            return jsonify({"error": f"Unknown operation '{operation}'. "
-                                     f"Use 'copy' or 'move'."}), 400
+    @app.route("/api/history")
+    def history():
+        return jsonify({"history": app.db.get_transfers(int(request.args.get("limit", 50)))})
 
-        app.db.save_transfer(record)
-
-        status_code = 200 if record.status == "success" else 500
-        return jsonify(record.to_dict()), status_code
-
-    # -- History & stats routes ----------------------------------------------
-
-    @app.route("/api/history", methods=["GET"])
-    def transfer_history():
-        """Return the last N transfer records from the database."""
-        limit = int(request.args.get("limit", 50))
-        records = app.db.get_transfer_history(limit)
-        return jsonify({"history": records})
-
-    @app.route("/api/quota", methods=["GET"])
+    @app.route("/api/quota")
     def quota():
-        """
-        Return quota information for a provider.
-        Query param: provider (required)
-        """
-        provider_name = request.args.get("provider")
-        if not provider_name:
-            return jsonify({"error": "Query param 'provider' is required."}), 400
+        name = request.args.get("provider")
+        if not name: return jsonify({"error": "'provider' required"}), 400
         try:
-            provider = ProviderRegistry.get(provider_name)
-            q = provider.get_quota()
-            q["provider"] = provider_name
+            q = ProviderRegistry.get(name).get_quota()
+            q["provider"] = name
             return jsonify(q)
-        except KeyError as exc:
-            return jsonify({"error": str(exc)}), 404
-        except CloudException as exc:
-            return jsonify({"error": str(exc)}), 500
+        except (KeyError, CloudException) as e: return jsonify({"error": str(e)}), 404
 
-    @app.route("/api/stats", methods=["GET"])
+    @app.route("/api/stats")
     def stats():
-        """Return aggregated statistics from the local database."""
-        return jsonify(app.db.get_stats())
-
-    # -- Error handlers ------------------------------------------------------
-
-    @app.errorhandler(413)
-    def request_entity_too_large(error):
-        return jsonify({"error": "File too large. Maximum upload is 500 MB."}), 413
-
-    @app.errorhandler(404)
-    def not_found(error):
-        return jsonify({"error": "Endpoint not found."}), 404
+        return jsonify(app.db.stats())
 
     return app
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-# Create the app at module level so gunicorn can find it
 app = create_app()
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
-    print(f"\nRunning at: http://0.0.0.0:{port}\n")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    print(f"\n  MultiCloud Platform  →  http://127.0.0.1:{port}\n")
+    app.run(host="0.0.0.0", port=port, debug=True)
