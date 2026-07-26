@@ -23,7 +23,7 @@ class TransferRecord:
     destination: str
     status:      str
     message:     str      = ""
-    timestamp:   datetime = field(default_factory=datetime.now)
+    timestamp:   datetime = field(default_factory=datetime.now)#involve dipr
     duration:    float    = 0.0
 
     def __str__(self):
